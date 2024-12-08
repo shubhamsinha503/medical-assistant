@@ -1,158 +1,135 @@
+import google.generativeai as genai
+import PIL.Image
 import streamlit as st
 import requests
-import base64
-from PIL import Image
-from io import BytesIO
 
-# NVIDIA API endpoint
-nvidia_api_url = "https://ai.api.nvidia.com/v1/vlm/nvidia/vila"
+# Function to get the Gemini AI response
+def get_gemini_response(api_key, prompt, image):
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+    response = model.generate_content([prompt, image])
+    return response.text
 
-# Google Maps API key
-google_maps_api_key = "google_api"
-
-
-# Helper function to encode image
-def encode_image_to_base64(upload_file):
-    """Compress and encode image to base64 format."""
+# Fetch nearby doctors using Google Maps API
+def get_nearby_doctors(location, specialty):
     try:
-        image = Image.open(upload_file).convert("RGB")  # Ensure no alpha channel
-        buffer = BytesIO()
-        image.save(buffer, format="JPEG", quality=70)  # Compress image
-        return base64.b64encode(buffer.getvalue()).decode()
-    except Exception as e:
-        st.error(f"Image encoding failed: {e}")
-        return None
+        api_key = "AIzaSyBKrIn4ruEluFEywJD3G84qBMHSgUfiCT0"
+        url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query=doctors+{specialty}+near+{location}&key={api_key}"
 
-
-# Convert address to latitude and longitude
-def geocode_address(address):
-    """Geocode an address to latitude and longitude using Google Maps API."""
-    geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
-    params = {"address": address, "key": google_maps_api_key}
-    response = requests.get(geocode_url, params=params)
-    if response.status_code == 200:
-        results = response.json().get("results", [])
-        if results:
-            location = results[0].get("geometry", {}).get("location", {})
-            return location.get("lat"), location.get("lng")
+        response = requests.get(url)
+        if response.status_code == 200:
+            results = response.json().get("results", [])
+            doctors = []
+            for result in results:
+                doctor_info = {
+                    "name": result.get("name"),
+                    "address": result.get("formatted_address"),
+                    "rating": result.get("rating", "N/A"),
+                    "user_ratings_total": result.get("user_ratings_total", 0),
+                }
+                doctors.append(doctor_info)
+            return doctors
         else:
-            st.error("Could not find location. Please check the address.")
-            return None, None
-    else:
-        st.error(f"Error geocoding address: {response.text}")
-        return None, None
-
-
-# Fetch nearby doctors based on disease type and user location
-def fetch_nearby_doctors(user_lat, user_lng, doctor_type):
-    """Fetch nearby doctors using Google Maps Places API."""
-    places_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-    params = {
-        "location": f"{user_lat},{user_lng}",
-        "radius": 5000,  # 5 km radius
-        "keyword": doctor_type,
-        "type": "doctor",
-        "key": google_maps_api_key
-    }
-    response = requests.get(places_url, params=params)
-    if response.status_code == 200:
-        return response.json().get("results", [])
-    else:
-        st.error(f"Error fetching nearby doctors: {response.text}")
+            st.error(f"Error fetching doctors: {response.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"Error fetching doctors: {e}")
         return []
 
+# Streamlit app customization
+st.set_page_config(
+    page_title="Gemini Vision Bot",
+    page_icon="🩺",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Map disease type to doctor specialization
-def get_doctor_specialization(disease):
-    """Map disease to a recommended doctor type."""
-    disease_mapping = {
-        "cardiac": "cardiologist",
-        "diabetes": "endocrinologist",
-        "orthopedic": "orthopedic doctor",
-        "skin": "dermatologist",
-        "lungs": "pulmonologist",
-        "neurological": "neurologist",
-        "general": "general practitioner",
+# Add custom CSS for styling
+st.markdown(
+    """
+    <style>
+    body {
+        background-color: #f0f2f6;
+        font-family: 'Arial', sans-serif;
     }
-    return disease_mapping.get(disease.lower(), "general practitioner")
+    .stButton button {
+        background-color: #4CAF50;
+        color: white;
+        border-radius: 5px;
+        font-size: 16px;
+        padding: 8px 16px;
+    }
+    .stButton button:hover {
+        background-color: #45a049;
+    }
+    .stHeader {
+        text-align: center;
+        font-size: 32px;
+        color: #2c3e50;
+    }
+    .stSubheader {
+        color: #16a085;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
+# Header
+st.markdown("<div class='stHeader'>GenAI Medical Application</div>", unsafe_allow_html=True)
 
-# Streamlit App Configuration
-st.set_page_config(page_title="AI Medical Insights", page_icon=":hospital:")
-st.title("SMART MEDICAL INSIGHTS")
-st.subheader("AI-Driven Medical Image Analysis with Personalized Doctor Recommendations")
+# Sidebar for input fields
+st.sidebar.title("Input Details")
+api_key = st.sidebar.text_input("Enter your Gemini passkey: ", type="password")
+location = st.sidebar.text_input("Enter your location (e.g., Delhi): ")
+uploaded_file = st.sidebar.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-# Location Input
-st.write("Please provide your location for personalized recommendations.")
-address = st.text_input("Enter your address or city (e.g., 'New Delhi', '123 Main St, San Francisco')",
-                        placeholder="Type your location here")
+# Load image without displaying it
+if uploaded_file is not None:
+    image = PIL.Image.open(uploaded_file)
+else:
+    image = None
 
-# File Uploader for Medical Image Upload
-upload_file = st.file_uploader("Upload your medical image for analysis", type=["png", "jpg", "jpeg"])
+# Button to submit the request
+if st.sidebar.button("Generate AI Report"):
+    if api_key and image is not None and location:
+        try:
+            # Generate AI response
+            prompt = "generate an AI report of the detected disease in image like finding, precautions, recommendations, and suggest the kind of doctor to be consulted"
+            ai_response = get_gemini_response(api_key, prompt, image)
+            st.subheader("AI Report:")
+            st.markdown(f"<div class='stSubheader'>{ai_response}</div>", unsafe_allow_html=True)
 
-# Button to generate analysis
-submit_button = st.button("Generate Analysis and Find Doctors Nearby")
+            # Extract doctor type from the response
+            doctor_type = "dermatologist"  # Replace with logic to parse `ai_response`
 
-# Process when the submit button is clicked
-if submit_button:
-    if not address:
-        st.error("Please provide your location.")
-    elif upload_file is not None:
-        # Convert address to latitude and longitude
-        user_lat, user_lng = geocode_address(address)
-        if user_lat is None or user_lng is None:
-            st.error("Could not process location. Please try again.")
-        else:
-            encoded_image = encode_image_to_base64(upload_file)
-            if not encoded_image:
-                st.error("Failed to process the image. Please try again.")
+            # Find nearby doctors based on the detected doctor type
+            st.subheader(f"Nearby {doctor_type.capitalize()}s:")
+            doctors = get_nearby_doctors(location, doctor_type)
+            if doctors:
+                for doctor in doctors:
+                    st.markdown(
+                        f"""
+                        - **Name**: {doctor['name']}
+                        - **Address**: {doctor['address']}
+                        - **Rating**: {doctor['rating']} ({doctor['user_ratings_total']} reviews)
+                        """,
+                        unsafe_allow_html=True,
+                    )
             else:
-                st.write("Analyzing the uploaded image...")
-
-                # NVIDIA API Call
-                api_key = "nvidia_api_key"
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Accept": "application/json"
-                }
-                payload = {
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": f'<img src="data:image/jpeg;base64,{encoded_image}" />'
-                        }
-                    ],
-                    "max_tokens": 1024,
-                    "temperature": 0.20,
-                    "top_p": 0.70,
-                    "stream": False
-                }
-                response = requests.post(nvidia_api_url, headers=headers, json=payload)
-
-                if response.status_code == 200:
-                    analysis_result = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-                    st.subheader("AI-Generated Medical Analysis")
-                    st.write(analysis_result)
-
-                    # Mocked disease detection
-                    detected_disease = "cardiac"  # Replace with actual NLP-based disease extraction logic
-                    st.write(f"**Detected Disease:** {detected_disease}")
-
-                    # Recommendations
-                    doctor_type = get_doctor_specialization(detected_disease)
-                    st.write(f"**Recommended Specialist:** {doctor_type.capitalize()}")
-                    st.write(f"**Precautions:** Stay hydrated, avoid stress, and consult a {doctor_type} immediately.")
-
-                    # Fetch nearby doctors
-                    st.write("Finding nearby doctors in your area...")
-                    nearby_doctors = fetch_nearby_doctors(user_lat, user_lng, doctor_type)
-                    st.subheader("Nearby Doctors")
-                    if nearby_doctors:
-                        for doctor in nearby_doctors:
-                            st.write(f"**{doctor.get('name')}** - {doctor.get('vicinity')}")
-                    else:
-                        st.write("No doctors found nearby. Please try again later.")
-                else:
-                    st.error(f"Error in NVIDIA API: {response.text}")
+                st.write(f"No {doctor_type}s found nearby.")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
     else:
-        st.error("Please upload an image before proceeding.")
+        st.error("Please provide all required inputs.")
+
+# Footer
+st.markdown(
+    """
+    <hr>
+    <div style="text-align: center; font-size: 14px;">
+        Powered by <b>Gemini AI</b> | Developed with ❤️ by Your Name
+    </div>
+    """,
+    unsafe_allow_html=True
+)
