@@ -10,6 +10,16 @@ def get_gemini_response(api_key, prompt, image):
     response = model.generate_content([prompt, image])
     return response.text
 
+def extract_doctor_type(ai_response):
+    doctor_types = [
+        "dermatologist", "cardiologist", "neurologist", "orthopedist", "pediatrician",
+        "psychiatrist", "oncologist", "dentist", "gynecologist", "urologist", "ENT specialist",
+    ]
+    # Check for known doctor types in the AI response
+    for doctor in doctor_types:
+        if doctor in ai_response.lower():
+            return doctor
+    return None
 # Fetch nearby doctors using Google Maps API
 def get_nearby_doctors(location, specialty):
     try:
@@ -86,7 +96,7 @@ st.markdown("<div class='stHeader'>GenAI Medical Application</div>", unsafe_allo
 # Sidebar for input fields
 st.sidebar.title("Input Details")
 st.sidebar.image("122.jpg", use_column_width=True, caption="Input Patient Data")  # Replace with your image path
-api_key = "gemini api key"
+api_key = "gemini api"
 location = st.sidebar.text_input("Enter your location (e.g., Delhi): ")
 uploaded_file = st.sidebar.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
@@ -101,13 +111,16 @@ if st.sidebar.button("Generate AI Report"):
     if api_key and image is not None and location:
         try:
             # Generate AI response
-            prompt = "generate an AI report of the detected disease in image like finding, precautions, recommendations, and suggest the kind of doctor to be consulted and also give some risk graph and give no disclaimer"
+            prompt = "generate an AI report of the detected disease in image like finding, precautions, recommendations, and suggest the kind of doctor to be consulted and also give some risk analysis and give no disclaimer and also give me reommended doctor from this list : dermatologist cardiologist neurologist orthopedist pediatrician psychiatrist oncologist dentist gynecologist urologist ENT specialist "
             ai_response = get_gemini_response(api_key, prompt, image)
             st.title("AI Report:")
             st.markdown(f"<div class='stSubheader'>{ai_response}</div>", unsafe_allow_html=True)
 
             # Extract doctor type from the response
-            doctor_type = "dermatologist"  # Replace with logic to parse `ai_response`
+            doctor_type = extract_doctor_type(ai_response)
+            if doctor_type:
+                st.subheader(f"Recommended Doctor: {doctor_type.capitalize()}")
+            # Replace with logic to parse `ai_response`
 
             # Find nearby doctors based on the detected doctor type
             st.subheader(f"Nearby {doctor_type.capitalize()}s:")
